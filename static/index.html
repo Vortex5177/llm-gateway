@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LLM Gateway 仪表盘</title>
+<script src="./chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg:#101418; --panel:#161c22; --line:#242c35; --fg:#d8dee6;
+    --muted:#7d8b99; --accent:#4da3ff; --ok:#3fbf7f; --warn:#e0a13e; --err:#e05c5c;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font-family:system-ui,"Segoe UI","Microsoft YaHei",sans-serif; }
+  header { display:flex; align-items:center; gap:14px; padding:12px 20px;
+           border-bottom:1px solid var(--line); position:sticky; top:0;
+           background:var(--bg); z-index:2; flex-wrap:wrap; }
+  header h1 { font-size:17px; margin:0; font-weight:600; letter-spacing:.3px; }
+  header .spacer { flex:1; }
+  select, button { background:var(--panel); color:var(--fg); border:1px solid var(--line);
+                   border-radius:6px; padding:6px 10px; font-size:13px; }
+  button { cursor:pointer; }
+  button:hover, select:hover { border-color:var(--accent); }
+  main { padding:16px 20px 40px; max-width:1500px; margin:0 auto; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+           gap:12px; margin-bottom:14px; }
+  .card { background:var(--panel); border:1px solid var(--line);
+          border-radius:10px; padding:12px 14px; }
+  .card .label { font-size:12px; color:var(--muted); margin-bottom:6px; }
+  .card .value { font-size:22px; font-weight:600; }
+  .card .value small { font-size:12px; color:var(--muted); font-weight:400; }
+  .charts { display:grid; grid-template-columns:repeat(auto-fit,minmax(430px,1fr));
+            gap:12px; margin-bottom:14px; }
+  .chart-box { background:var(--panel); border:1px solid var(--line);
+               border-radius:10px; padding:10px 12px 6px; }
+  .chart-box h2 { font-size:13px; margin:2px 0 8px; color:var(--muted); font-weight:500; }
+  .chart-box .wrap { position:relative; height:238px; }
+  .table-box { background:var(--panel); border:1px solid var(--line);
+               border-radius:10px; padding:10px 12px; overflow-x:auto; }
+  .table-box h2 { font-size:13px; margin:2px 0 8px; color:var(--muted); font-weight:500; }
+  table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  th { color:var(--muted); font-weight:500; }
+  tbody tr:hover td { background:#1a222b; }
+  .status { padding:1px 7px; border-radius:999px; font-size:11.5px; }
+  .status.ok { background:rgba(63,191,127,.15); color:var(--ok); }
+  .status.upstream_error, .status.timeout { background:rgba(224,92,92,.15); color:var(--err); }
+  .status.client_abort { background:rgba(224,161,62,.15); color:var(--warn); }
+  .muted { color:var(--muted); }
+  #updated { font-size:12px; color:var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>LLM Gateway</h1>
+  <span id="updated"></span>
+  <span class="spacer"></span>
+  <select id="days">
+    <option value="1">近 1 天</option>
+    <option value="7" selected>近 7 天</option>
+    <option value="30">近 30 天</option>
+  </select>
+  <select id="tag"><option value="">全部 tag</option></select>
+  <button id="refresh">刷新</button>
+</header>
+<main>
+  <div class="cards" id="cards"></div>
+  <div class="charts">
+    <div class="chart-box">
+      <h2>请求与 Token</h2>
+      <div class="wrap"><canvas id="chart-traffic"></canvas></div>
+    </div>
+    <div class="chart-box">
+      <h2>延迟趋势（平均延迟 / TTFT）</h2>
+      <div class="wrap"><canvas id="chart-latency"></canvas></div>
+    </div>
+    <div class="chart-box">
+      <h2>GPU 利用率与显存</h2>
+      <div class="wrap"><canvas id="chart-gpu"></canvas></div>
+    </div>
+    <div class="chart-box">
+      <h2>引擎排队与 KV Cache</h2>
+      <div class="wrap"><canvas id="chart-engine"></canvas></div>
+    </div>
+  </div>
+  <div class="table-box">
+    <h2>最近请求</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>时间</th><th>tag</th><th>模型</th><th>tokens</th>
+          <th>延迟</th><th>TTFT</th><th>状态</th><th>attempts</th>
+        </tr>
+      </thead>
+      <tbody id="recent-body"></tbody>
+    </table>
+  </div>
+</main>
+<script src="./dashboard.js"></script>
+</body>
+</html>
