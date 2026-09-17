@@ -173,6 +173,69 @@ function renderRecent(rows) {
     .join("");
 }
 
+/* ---- 模型目录 / Provider 接入（/api/models，含连通性探测） ---- */
+
+function kindBadge(kind) {
+  return kind === "local"
+    ? '<span class="badge local">本地</span>'
+    : '<span class="badge cloud">API</span>';
+}
+
+function fallbackCell(entries) {
+  if (!entries || !entries.length) return '<span class="muted">—</span>';
+  return entries
+    .map((e) => (e.tag ? '<span class="muted">@' + esc(e.tag) + "</span> " : "") +
+      "→ " + e.chain.map(esc).join(" → "))
+    .join("<br>");
+}
+
+function renderCatalog(data) {
+  const def = data.aliases && data.aliases["default"];
+  document.getElementById("catalog-hint").textContent =
+    def ? "· 默认 default → " + def : "";
+
+  const models = document.getElementById("models-body");
+  const modelRows = (data.models || []).map((m) => {
+    const aliases = (m.aliases || []).length
+      ? m.aliases.map((a) => '<span class="badge">' + esc(a) + "</span>").join(" ")
+      : '<span class="muted">—</span>';
+    return "<tr><td>" + esc(m.id) + "</td><td>" + kindBadge(m.kind) + "</td><td>" +
+      esc(m.provider) + '</td><td class="muted">' + esc(m.upstream) + "</td><td>" +
+      aliases + "</td><td>" + fallbackCell(m.fallbacks) + "</td></tr>";
+  });
+  models.innerHTML = modelRows.join("") ||
+    '<tr><td colspan="6" class="muted">无模型</td></tr>';
+
+  const providers = document.getElementById("providers-body");
+  const providerRows = (data.providers || []).map((p) => {
+    const key = p.key || {};
+    let keyCell;
+    if (key.source === "literal") keyCell = '<span class="muted">字面量</span>';
+    else if (key.source === "env") {
+      keyCell = esc(key.name) + " " +
+        (key.configured ? '<span class="status ok">已配置</span>'
+                        : '<span class="status upstream_error">未配置</span>');
+    } else keyCell = '<span class="status upstream_error">未配置</span>';
+    const conn = p.reachable
+      ? '<span class="status ok">可达</span> <span class="muted">' + fmtMs(p.latency_ms) + "</span>"
+      : '<span class="status upstream_error">不可达</span> <span class="muted cellwrap">' + esc(p.detail) + "</span>";
+    const served = (p.models || []).length
+      ? p.models.map(esc).join("、")
+      : '<span class="muted">—</span>';
+    return "<tr><td>" + esc(p.name) + "</td><td>" + kindBadge(p.kind) +
+      '</td><td class="muted cellwrap">' + esc(p.base_url) + '</td><td class="cellwrap">' + keyCell +
+      "</td><td>" + conn + "</td><td>" + served + "</td></tr>";
+  });
+  providers.innerHTML = providerRows.join("") ||
+    '<tr><td colspan="6" class="muted">无 provider</td></tr>';
+}
+
+async function loadCatalog() {
+  const resp = await fetch("/api/models");
+  if (!resp.ok) throw new Error("HTTP " + resp.status);
+  renderCatalog(await resp.json());
+}
+
 function showError(err) {
   document.getElementById("updated").textContent = "加载失败：" + err.message;
 }
@@ -210,7 +273,12 @@ document.getElementById("tag").addEventListener("change", (event) => {
   state.tag = event.target.value;
   load().catch(showError);
 });
-document.getElementById("refresh").addEventListener("click", () => load().catch(showError));
+document.getElementById("refresh").addEventListener("click", () => {
+  load().catch(showError);
+  loadCatalog().catch(showError);
+});
 
 load().catch(showError);
+// 目录含 provider 连通性探测：仅页面加载/手动刷新时拉取，不随 30s 轮询
+loadCatalog().catch(showError);
 setInterval(() => load().catch(() => {}), 30000);

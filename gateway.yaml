@@ -9,6 +9,7 @@ server:
 providers:
   local-vllm:
     base_url: http://localhost:8200/v1
+    type: local                  # 可选（local|cloud）；缺省按 base_url 自动推断
     api_key: EMPTY
     metrics_url: http://localhost:8200/metrics   # 可空 = 不采引擎指标
   deepseek:

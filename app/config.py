@@ -10,9 +10,11 @@
 
 from __future__ import annotations
 
+import ipaddress
 import os
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import urlparse
 
 import yaml
 from dotenv import load_dotenv
@@ -50,6 +52,7 @@ class ProviderConfig(BaseModel):
     api_key: str | None = None  # 字面量密钥（本地 vLLM 用 "EMPTY"）
     api_key_env: str | None = None  # 从环境变量读取的密钥名
     metrics_url: str | None = None  # 可空 = 不采集该 provider 的引擎指标
+    type: Literal["local", "cloud"] | None = None  # 缺省按 base_url 推断（见 provider_kind）
 
 
 class ModelRef(BaseModel):
@@ -86,6 +89,24 @@ def resolve_api_key(provider: ProviderConfig) -> str | None:
     if provider.api_key_env:
         return os.environ.get(provider.api_key_env) or None
     return None
+
+
+def provider_kind(provider: ProviderConfig) -> Literal["local", "cloud"]:
+    """本地/云端判定：显式 type 优先；否则按 base_url 主机名推断。
+
+    主机名为 localhost / *.local / host.docker.internal，或解析为回环/内网
+    IP（127.x、::1、10.x、192.168.x、172.16-31.x 等）时视为本地，其余云端。
+    """
+    if provider.type is not None:
+        return provider.type
+    host = (urlparse(provider.base_url).hostname or "").lower()
+    if host in ("localhost", "host.docker.internal") or host.endswith(".local"):
+        return "local"
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return "cloud"
+    return "local" if ip.is_loopback or ip.is_private else "cloud"
 
 
 def _format_validation_error(exc: ValidationError) -> str:

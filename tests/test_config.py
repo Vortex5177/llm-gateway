@@ -4,7 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from app.config import ConfigError, load_config, parse_config, resolve_api_key
+from app.config import (
+    ConfigError,
+    ProviderConfig,
+    load_config,
+    parse_config,
+    provider_kind,
+    resolve_api_key,
+)
 from app.registry import Registry, UnknownModelError
 
 YAML_TEMPLATE = """\
@@ -206,6 +213,36 @@ def test_resolve_api_key_env_missing(config_dict, monkeypatch):
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     cfg = parse_config(config_dict)
     assert resolve_api_key(cfg.providers["deepseek"]) is None
+
+
+# ------------------------------------------------------------ provider kind
+
+
+@pytest.mark.parametrize(
+    ("base_url", "expected"),
+    [
+        ("http://localhost:8200/v1", "local"),
+        ("http://127.0.0.1:8200/v1", "local"),
+        ("http://192.168.1.10:8200/v1", "local"),
+        ("http://[::1]:8200/v1", "local"),
+        ("https://api.deepseek.com/v1", "cloud"),
+        ("https://dashscope.aliyuncs.com/compatible-mode/v1", "cloud"),
+    ],
+)
+def test_provider_kind_inference(base_url, expected):
+    assert provider_kind(ProviderConfig(base_url=base_url)) == expected
+
+
+def test_provider_kind_explicit_override():
+    provider = ProviderConfig(base_url="http://localhost:8200/v1", type="cloud")
+    assert provider_kind(provider) == "cloud"
+
+
+def test_provider_type_invalid_raises(config_dict):
+    config_dict["providers"]["local-vllm"]["type"] = "hybrid"
+    with pytest.raises(ConfigError) as excinfo:
+        parse_config(config_dict)
+    assert "type" in str(excinfo.value)
 
 
 # ------------------------------------------------------------ registry

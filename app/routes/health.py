@@ -1,4 +1,4 @@
-"""GET /health：存活 + 各 provider 可达性。"""
+"""GET /health：存活 + 各 provider 可达性（探测逻辑复用给 /api/models）。"""
 
 from __future__ import annotations
 
@@ -16,7 +16,10 @@ router = APIRouter(tags=["health"])
 CHECK_TIMEOUT_SECONDS = 3.0
 
 
-async def _check_provider(name: str, provider: ProviderConfig) -> dict[str, Any]:
+async def check_provider(
+    provider: ProviderConfig, transport: httpx.AsyncBaseTransport | None = None
+) -> dict[str, Any]:
+    """探测单个 provider：密钥缺失 → 直接标注，不发网络请求。"""
     key = resolve_api_key(provider)
     if provider.api_key_env and key is None:
         return {
@@ -28,7 +31,9 @@ async def _check_provider(name: str, provider: ProviderConfig) -> dict[str, Any]
     headers = {"Authorization": f"Bearer {key}"} if key else {}
     started = time.perf_counter()
     try:
-        async with httpx.AsyncClient(timeout=CHECK_TIMEOUT_SECONDS) as client:
+        async with httpx.AsyncClient(
+            timeout=CHECK_TIMEOUT_SECONDS, transport=transport
+        ) as client:
             resp = await client.get(url, headers=headers)
     except httpx.HTTPError as exc:
         return {"reachable": False, "latency_ms": None, "detail": f"不可达: {exc}"}
@@ -48,8 +53,9 @@ async def _check_provider(name: str, provider: ProviderConfig) -> dict[str, Any]
 @router.get("/health")
 async def health(request: Request) -> dict[str, Any]:
     config = request.app.state.config
+    transport = getattr(request.app.state, "http_transport", None)
     names = list(config.providers)
     checks = await asyncio.gather(
-        *(_check_provider(name, config.providers[name]) for name in names)
+        *(check_provider(config.providers[name], transport) for name in names)
     )
     return {"status": "ok", "providers": dict(zip(names, checks))}

@@ -30,7 +30,7 @@
 - **服务端回退链**：`primary → fallbacks`，键支持 `模型@tag` 精确覆盖；客户端无感，响应头（`X-GW-Attempts` 等）与落库字段可观测
 - **硬顶参数注入**：按 tag 覆盖（如 `max_tokens`、`repetition_penalty`），防弱模型失控/重复生成；客户端原值仅记审计
 - **流式细节**：TTFT 度量、`stream_options.include_usage` 自动注入、客户端断连时 `asyncio.shield` 兜底清理（断连也保证落库）
-- **可观测性**：NVML GPU 采样 + vLLM `/metrics` 引擎指标 → SQLite → 聚合 API → 零依赖 Chart.js 看板（请求/tokens/延迟/TTFT/GPU 曲线、tag 分组）
+- **可观测性**：NVML GPU 采样 + vLLM `/metrics` 引擎指标 → SQLite → 聚合 API → 零依赖 Chart.js 看板（请求/tokens/延迟/TTFT/GPU 曲线、tag 分组、模型与 Provider 面板）
 - **健康检查**：`GET /health` 报告各 provider 可达性
 
 ## 快速开始
@@ -63,6 +63,7 @@ wsl -d Ubuntu-24.04 -- /opt/scripts/start-vllm.sh
 | `GET /v1/models` | 模型与别名清单 |
 | `GET /health` | 存活 + 各 provider 可达性 |
 | `GET /api/stats?days=N&tag=X` | 聚合统计（总量 / tag 分组 / 时间序列 / GPU / 引擎 / 最近请求） |
+| `GET /api/models` | 模型目录（名称 / 本地或云 / 别名 / 回退链）+ provider 接入状态（密钥来源 / 连通性） |
 | `GET /` | 静态监控看板 |
 
 ## 配置说明（gateway.yaml）
@@ -70,7 +71,7 @@ wsl -d Ubuntu-24.04 -- /opt/scripts/start-vllm.sh
 | 段 | 作用 |
 |---|---|
 | `server` | 监听地址、上游超时、鉴权开关（默认关闭，仅监听 127.0.0.1） |
-| `providers` | 上游服务：base_url + 密钥（明文或 `*_env` 环境变量引用）+ metrics_url |
+| `providers` | 上游服务：base_url + 密钥（明文或 `*_env` 环境变量引用）+ metrics_url + 可选 `type`（local/cloud，缺省按 base_url 推断） |
 | `models` | 客户端可见名 → provider + 上游真实名 |
 | `aliases` | 逻辑别名（如 `default`），切换本地/云只改这一行 |
 | `fallbacks` | 服务端回退链；键支持 `模型@tag` 精确覆盖 |
@@ -84,7 +85,7 @@ wsl -d Ubuntu-24.04 -- /opt/scripts/start-vllm.sh
 ## 测试与验收
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest                       # 87 个单元测试（上游用 MockTransport stub）
+.\.venv\Scripts\python.exe -m pytest                       # 98 个单元测试（上游用 MockTransport stub）
 .\.venv\Scripts\python.exe smoke_test.py                   # 33 项端到端检查（真调本地 vLLM）
 .\.venv\Scripts\python.exe smoke_test.py --fallback-demo   # 9 项回退链检查（先以 gateway.fallback_demo.yaml 在 :4101 启动演示网关）
 ```

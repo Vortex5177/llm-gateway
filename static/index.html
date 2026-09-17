@@ -30,8 +30,8 @@
   .card .label { font-size:12px; color:var(--muted); margin-bottom:6px; }
   .card .value { font-size:22px; font-weight:600; }
   .card .value small { font-size:12px; color:var(--muted); font-weight:400; }
-  .charts { display:grid; grid-template-columns:repeat(auto-fit,minmax(430px,1fr));
-            gap:12px; margin-bottom:14px; }
+  .charts, .tables { display:grid; grid-template-columns:repeat(auto-fit,minmax(430px,1fr));
+                     gap:12px; margin-bottom:14px; }
   .chart-box { background:var(--panel); border:1px solid var(--line);
                border-radius:10px; padding:10px 12px 6px; }
   .chart-box h2 { font-size:13px; margin:2px 0 8px; color:var(--muted); font-weight:500; }
@@ -40,6 +40,7 @@
                border-radius:10px; padding:10px 12px; overflow-x:auto; }
   .table-box h2 { font-size:13px; margin:2px 0 8px; color:var(--muted); font-weight:500; }
   table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  table.catalog { table-layout:fixed; min-width:600px; }
   th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); white-space:nowrap; }
   th { color:var(--muted); font-weight:500; }
   tbody tr:hover td { background:#1a222b; }
@@ -47,6 +48,12 @@
   .status.ok { background:rgba(63,191,127,.15); color:var(--ok); }
   .status.upstream_error, .status.timeout { background:rgba(224,92,92,.15); color:var(--err); }
   .status.client_abort { background:rgba(224,161,62,.15); color:var(--warn); }
+  .badge { padding:1px 7px; border-radius:999px; font-size:11.5px;
+           background:rgba(125,139,153,.15); color:var(--muted); }
+  .badge.local { background:rgba(63,191,127,.15); color:var(--ok); }
+  .badge.cloud { background:rgba(77,163,255,.15); color:var(--accent); }
+  .cellwrap { white-space:normal; word-break:break-all; }
+  .hint { margin-left:8px; font-weight:400; opacity:.55; }
   .muted { color:var(--muted); }
   #updated { font-size:12px; color:var(--muted); }
 </style>
@@ -66,6 +73,38 @@
 </header>
 <main>
   <div class="cards" id="cards"></div>
+  <div class="tables">
+    <div class="table-box">
+      <h2>可切换模型<span id="catalog-hint" class="hint"></span></h2>
+      <table class="catalog">
+        <colgroup>
+          <col style="width:18%"><col style="width:8%"><col style="width:16%">
+          <col style="width:16%"><col style="width:14%"><col style="width:28%">
+        </colgroup>
+        <thead>
+          <tr><th>模型</th><th>类型</th><th>Provider</th><th>上游名</th><th>别名</th><th>回退链</th></tr>
+        </thead>
+        <tbody id="models-body">
+          <tr><td colspan="6" class="muted">加载中…</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="table-box">
+      <h2>Provider 接入</h2>
+      <table class="catalog">
+        <colgroup>
+          <col style="width:14%"><col style="width:7%"><col style="width:16%">
+          <col style="width:17%"><col style="width:31%"><col style="width:15%">
+        </colgroup>
+        <thead>
+          <tr><th>Provider</th><th>类型</th><th>Base URL</th><th>密钥</th><th>连通性</th><th>承载模型</th></tr>
+        </thead>
+        <tbody id="providers-body">
+          <tr><td colspan="6" class="muted">加载中…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
   <div class="charts">
     <div class="chart-box">
       <h2>请求与 Token</h2>
