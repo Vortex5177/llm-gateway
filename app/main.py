@@ -12,8 +12,9 @@ from fastapi.staticfiles import StaticFiles
 from app.config import get_config
 from app.db import init_db
 from app.registry import Registry
-from app.routes import chat, health, models, stats
+from app.routes import chat, health, models, service, stats
 from app.sampler import Sampler
+from app.vllm_service import VllmService
 
 
 @asynccontextmanager
@@ -29,6 +30,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        await app.state.vllm_service.close()
         await sampler.stop()
 
 
@@ -40,6 +42,8 @@ def create_app() -> FastAPI:
     application.state.http_transport = None  # 测试可注入 httpx.MockTransport
     application.state.session_factory = None  # 测试可注入临时会话工厂
     application.state.sampler = None
+    application.state.vllm_service = VllmService(config)
+    application.include_router(service.router)
     application.include_router(health.router)
     application.include_router(models.router)
     application.include_router(chat.router)

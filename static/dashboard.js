@@ -11,6 +11,7 @@ const C = {
 
 const fmtInt = (n) => Number(n == null ? 0 : n).toLocaleString("zh-CN");
 const fmtMs = (v) => (v == null ? "—" : Number(v).toFixed(1) + " ms");
+const fmtTps = (v) => (v == null ? "—" : Number(v).toFixed(1) + " t/s");
 const fmtTime = (iso) => (iso ? new Date(iso).toLocaleString("zh-CN", { hour12: false }) : "—");
 const esc = (s) =>
   String(s == null ? "" : s).replace(/[&<>"']/g, (ch) =>
@@ -80,6 +81,7 @@ function renderCards(t) {
     { label: "平均延迟", value: fmtMs(t.avg_latency_ms) },
     { label: "p95 延迟", value: fmtMs(t.p95_latency_ms) },
     { label: "平均 TTFT", value: fmtMs(t.avg_ttft_ms) },
+    { label: "平均生成速度", value: fmtTps(t.avg_output_tps) },
   ];
   document.getElementById("cards").innerHTML = cards
     .map((c) => '<div class="card"><div class="label">' + c.label + '</div><div class="value">' + c.value + "</div></div>")
@@ -125,6 +127,23 @@ function renderCharts(data) {
     options: chartOptions("毫秒", null),
   });
 
+  const tpsTs = Array.from(
+    new Set(data.timeseries.map((p) => p.ts).concat(data.engine.map((p) => p.ts)))
+  ).sort();
+  const reqTps = new Map(data.timeseries.map((p) => [p.ts, p.avg_tps]));
+  const engTps = new Map(data.engine.map((p) => [p.ts, p.gen_tps]));
+  upsertChart("tps", {
+    type: "line",
+    data: {
+      labels: tpsTs.map(fmtShort),
+      datasets: [
+        line("请求平均 t/s", tpsTs.map((ts) => (reqTps.has(ts) ? reqTps.get(ts) : null)), C.green, "y", false),
+        line("引擎吞吐 t/s", tpsTs.map((ts) => (engTps.has(ts) ? engTps.get(ts) : null)), C.purple, "y", false),
+      ],
+    },
+    options: chartOptions("tokens/s", null),
+  });
+
   upsertChart("gpu", {
     type: "line",
     data: {
@@ -154,7 +173,7 @@ function renderCharts(data) {
 function renderRecent(rows) {
   const body = document.getElementById("recent-body");
   if (!rows.length) {
-    body.innerHTML = '<tr><td colspan="8" class="muted">窗口内暂无请求</td></tr>';
+    body.innerHTML = '<tr><td colspan="9" class="muted">窗口内暂无请求</td></tr>';
     return;
   }
   const known = ["ok", "upstream_error", "client_abort", "timeout"];
@@ -167,6 +186,7 @@ function renderRecent(rows) {
       return (
         "<tr><td>" + fmtTime(r.ts) + "</td><td>" + tagCell + "</td><td>" + modelCell +
         "</td><td>" + tokenCell + "</td><td>" + fmtMs(r.latency_ms) + "</td><td>" + fmtMs(r.ttft_ms) +
+        "</td><td>" + fmtTps(r.output_tps) +
         '</td><td><span class="status ' + cls + '">' + esc(r.status) + "</span></td><td>" + r.attempts + "</td></tr>"
       );
     })
@@ -189,6 +209,21 @@ function fallbackCell(entries) {
     .join("<br>");
 }
 
+function keyCellHtml(p) {
+  const key = p.key || {};
+  if (key.source === "literal") return '<span class="muted">字面量</span>';
+  const desc = key.source === "env"
+    ? esc(key.name) + " " + (key.configured
+        ? '<span class="status ok">已配置</span>'
+        : '<span class="status upstream_error">未配置</span>')
+    : '<span class="status upstream_error">未配置</span>';
+  const btn = key.source === "env"
+    ? '<button class="mini" data-act="edit" data-name="' + esc(p.name) + '">' +
+      (key.configured ? "更新" : "配置") + "</button>"
+    : "";
+  return desc + btn;
+}
+
 function renderCatalog(data) {
   const def = data.aliases && data.aliases["default"];
   document.getElementById("catalog-hint").textContent =
@@ -208,22 +243,14 @@ function renderCatalog(data) {
 
   const providers = document.getElementById("providers-body");
   const providerRows = (data.providers || []).map((p) => {
-    const key = p.key || {};
-    let keyCell;
-    if (key.source === "literal") keyCell = '<span class="muted">字面量</span>';
-    else if (key.source === "env") {
-      keyCell = esc(key.name) + " " +
-        (key.configured ? '<span class="status ok">已配置</span>'
-                        : '<span class="status upstream_error">未配置</span>');
-    } else keyCell = '<span class="status upstream_error">未配置</span>';
     const conn = p.reachable
       ? '<span class="status ok">可达</span> <span class="muted">' + fmtMs(p.latency_ms) + "</span>"
       : '<span class="status upstream_error">不可达</span> <span class="muted cellwrap">' + esc(p.detail) + "</span>";
-    const served = (p.models || []).length
-      ? p.models.map(esc).join("、")
-      : '<span class="muted">—</span>';
-    return "<tr><td>" + esc(p.name) + "</td><td>" + kindBadge(p.kind) +
-      '</td><td class="muted cellwrap">' + esc(p.base_url) + '</td><td class="cellwrap">' + keyCell +
+    const served = p.kind === "local"
+      ? '<span data-local-carrier>' + localCarrierHtml() + "</span>"
+      : ((p.models || []).length ? p.models.map(esc).join("、") : '<span class="muted">—</span>');
+    return '<tr data-provider="' + esc(p.name) + '"><td>' + esc(p.name) + "</td><td>" + kindBadge(p.kind) +
+      '</td><td class="muted cellwrap">' + esc(p.base_url) + '</td><td class="cellwrap keycell">' + keyCellHtml(p) +
       "</td><td>" + conn + "</td><td>" + served + "</td></tr>";
   });
   providers.innerHTML = providerRows.join("") ||
@@ -255,6 +282,334 @@ async function load() {
     "更新于 " + new Date().toLocaleTimeString("zh-CN", { hour12: false }) + " · 桶粒度 " + bucket;
 }
 
+/* ---- 本地服务控制：独立轮询，所有详情作为纯文本展示 ---- */
+
+let serviceView = null;
+let serviceReading = false;
+let servicePosting = false;
+let serviceEpoch = 0;
+let serviceOptionsKey = "";
+let serviceSelected = null;
+const serviceLabels = {
+  stopped: "已停止", starting: "启动中", running: "运行中", stopping: "停止中",
+  failed: "失败", unavailable: "控制不可用", conflict: "实例冲突",
+};
+
+function localCarrierHtml() {
+  // 本地 provider 为单实例：承载模型列展示运行时“当前模型”（候选列表见“可切换模型”表）
+  if (!serviceView) return '<span class="muted">读取中…</span>';
+  if (serviceView.state === "running" && serviceView.current) return esc(serviceView.current);
+  return '<span class="muted">—</span>';
+}
+
+function renderServiceModels(view) {
+  const select = document.getElementById("service-select");
+  const models = Array.isArray(view.models) ? view.models : [];
+  const key = models.join("\u0000");
+  if (key !== serviceOptionsKey) {
+    // 仅在候选集合变化时重建选项，保留用户当前选择。
+    serviceOptionsKey = key;
+    select.textContent = "";
+    for (const name of models) {
+      const option = document.createElement("option");
+      option.value = name;
+      option.textContent = name;
+      select.appendChild(option);
+    }
+  }
+  if (!models.includes(serviceSelected)) {
+    serviceSelected = models.includes(view.current) ? view.current
+      : (models.includes(view.model) ? view.model : (models[0] || null));
+  }
+  if (serviceSelected !== null) select.value = serviceSelected;
+  const transitional = view.state === "starting" || view.state === "stopping";
+  select.disabled = servicePosting || transitional || models.length === 0;
+}
+
+function renderServiceButtons(view) {
+  const start = document.getElementById("service-start");
+  const stop = document.getElementById("service-stop");
+  const selected = document.getElementById("service-select").value || null;
+  const transitional = view.state === "starting" || view.state === "stopping";
+  if (view.state === "running" && (selected === null || selected === view.current)) {
+    start.textContent = "已运行";
+    start.disabled = true;
+  } else if (view.state === "running") {
+    start.textContent = "切换";
+    start.disabled = servicePosting || view.can_stop !== true;
+  } else {
+    start.textContent = transitional ? "启动中…" : "启动";
+    start.disabled = servicePosting || transitional || view.can_start !== true;
+  }
+  stop.textContent = transitional ? "停止中…" : "停止";
+  stop.disabled = servicePosting || view.can_stop !== true;
+}
+
+function renderLocalService(view) {
+  serviceView = view;
+  const label = serviceLabels[view.state] || serviceLabels.unavailable;
+  renderServiceModels(view);
+  document.getElementById("service-url").textContent = view.url || "";
+  const status = document.getElementById("service-state");
+  status.textContent = label;
+  status.dataset.state = serviceLabels[view.state] ? view.state : "unavailable";
+  document.getElementById("service-detail").textContent = view.detail || "";
+  renderServiceButtons(view);
+  for (const cell of document.querySelectorAll("[data-local-carrier]")) {
+    cell.innerHTML = localCarrierHtml();
+  }
+}
+
+function serviceFailure(message) {
+  renderLocalService({ model: serviceView && serviceView.model, models: serviceView && serviceView.models,
+    current: serviceView && serviceView.current, url: serviceView && serviceView.url,
+    state: "unavailable", can_start: false, can_stop: false, detail: message });
+}
+
+async function loadLocalService() {
+  if (serviceReading || servicePosting) return;
+  serviceReading = true;
+  const epoch = serviceEpoch;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20000);
+  try {
+    const resp = await fetch("/api/local-vllm", { cache: "no-store", signal: controller.signal });
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    const view = await resp.json();
+    if (epoch === serviceEpoch) renderLocalService(view);
+  } catch (err) {
+    if (epoch === serviceEpoch) serviceFailure("无法核验服务状态：" + err.message);
+  } finally {
+    clearTimeout(timeout);
+    serviceReading = false;
+  }
+}
+
+async function controlLocalService(action, model) {
+  if (servicePosting || !serviceView) return;
+  if (action === "stop") {
+    if (serviceView.can_stop !== true) return;
+    if (!window.confirm(
+      "停止本地 Qwen 服务？\n\n正在生成的回答可能中断，已输出的内容不能无缝转到云端。\n后续请求仍按现有回退链处理，可能发送到 DeepSeek 并产生云端费用。"
+    )) return;
+  } else if (action === "switch") {
+    if (!model || serviceView.can_stop !== true) return;
+    if (!window.confirm(
+      "切换到 " + model + "？\n\n将先停止当前运行中的 " + (serviceView.current || "模型") +
+      "，在途回答会中断；切换通常需要约 1 分钟。\n期间请求仍按现有回退链处理，可能发送到 DeepSeek 并产生云端费用。"
+    )) return;
+  } else {
+    if (!model || serviceView.can_start !== true) return;
+  }
+  servicePosting = true;
+  serviceEpoch += 1;  // 丢弃动作之前已发出的旧状态请求。
+  renderLocalService(serviceView);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 25000);
+  try {
+    const resp = await fetch("/api/local-vllm/" + action, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: action === "stop" ? "{}" : JSON.stringify({ model: model }),
+      signal: controller.signal,
+    });
+    const view = await resp.json();
+    if (view.state) renderLocalService(view);
+    else throw new Error(view.detail || "HTTP " + resp.status);
+  } catch (err) {
+    serviceFailure("控制请求未确认，请等待状态刷新；不会自动重复操作。" + err.message);
+  } finally {
+    clearTimeout(timeout);
+    servicePosting = false;
+    if (serviceView) renderLocalService(serviceView);
+  }
+}
+
+async function pollLocalService() {
+  await loadLocalService();
+  setTimeout(pollLocalService, 3000);
+}
+
+document.getElementById("service-select").addEventListener("change", (event) => {
+  serviceSelected = event.target.value || null;
+  if (serviceView) renderServiceButtons(serviceView);
+});
+document.getElementById("service-start").addEventListener("click", () => {
+  const view = serviceView;
+  if (!view) return;
+  const selected = document.getElementById("service-select").value || null;
+  if (view.state === "running" && selected && selected !== view.current) {
+    controlLocalService("switch", selected);
+  } else {
+    controlLocalService("start", selected);
+  }
+});
+document.getElementById("service-stop").addEventListener("click", () => controlLocalService("stop", null));
+
+/* ---- provider 密钥行内编辑（POST /api/providers/{name}/key，仅本机） ---- */
+
+function keyCellOf(name) {
+  const row = document.querySelector('tr[data-provider="' + CSS.escape(name) + '"]');
+  return row ? row.querySelector(".keycell") : null;
+}
+
+function startKeyEdit(name) {
+  const td = keyCellOf(name);
+  if (!td || td.dataset.original) return;
+  td.dataset.original = td.innerHTML;
+  td.innerHTML =
+    '<div class="keyedit">' +
+    '<input type="password" autocomplete="off" placeholder="粘贴 API Key">' +
+    '<div class="keyedit-actions">' +
+    '<button class="mini" data-act="save" data-name="' + esc(name) + '">保存</button>' +
+    '<button class="mini" data-act="cancel" data-name="' + esc(name) + '">取消</button>' +
+    '</div><div class="err"></div></div>';
+  const input = td.querySelector("input");
+  if (input) input.focus();
+}
+
+function cancelKeyEdit(name) {
+  const td = keyCellOf(name);
+  if (!td || !td.dataset.original) return;
+  td.innerHTML = td.dataset.original;
+  delete td.dataset.original;
+}
+
+async function saveProviderKey(name) {
+  const td = keyCellOf(name);
+  if (!td) return;
+  const input = td.querySelector("input");
+  const errBox = td.querySelector(".err");
+  const value = input ? input.value : "";
+  if (!value.trim()) {
+    if (errBox) errBox.textContent = "请输入 API Key";
+    return;
+  }
+  const saveBtn = td.querySelector('button[data-act="save"]');
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = "保存中…"; }
+  let resp;
+  try {
+    resp = await fetch("/api/providers/" + encodeURIComponent(name) + "/key", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ api_key: value }),
+    });
+  } catch (err) {
+    if (errBox) errBox.textContent = "网络错误：" + err.message;
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = "保存"; }
+    return;
+  }
+  if (!resp.ok) {
+    let detail = "HTTP " + resp.status;
+    try { detail = (await resp.json()).detail || detail; } catch (e) { /* 响应非 JSON */ }
+    if (errBox) errBox.textContent = detail;
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = "保存"; }
+    return;
+  }
+  delete td.dataset.original;
+  loadCatalog().catch(showError);
+}
+
+/* ---- 添加 Provider（POST /api/providers，仅本机；前缀路由 provider/模型名 直通） ---- */
+
+const PROVIDER_PRESET_OPTIONS = [
+  ["moonshot", "Moonshot (Kimi)"],
+  ["zhipu", "智谱 GLM"],
+  ["siliconflow", "SiliconFlow"],
+  ["custom", "自定义"],
+];
+
+function addFormOf() {
+  return document.querySelector("#providers-body .addrow .addform");
+}
+
+function startAddProvider() {
+  if (document.querySelector("#providers-body .addrow")) return;
+  const options = PROVIDER_PRESET_OPTIONS
+    .map((o) => '<option value="' + o[0] + '">' + o[1] + "</option>")
+    .join("");
+  document.getElementById("providers-body").insertAdjacentHTML(
+    "beforeend",
+    '<tr class="addrow"><td colspan="6"><div class="addform">' +
+    '<select data-act="add-preset">' + options + "</select>" +
+    '<input class="nameinput" placeholder="名称（如 my-gw）" style="display:none">' +
+    '<input class="baseinput" placeholder="Base URL（https://…/v1）" style="display:none">' +
+    '<input class="keyinput" type="password" autocomplete="off" placeholder="粘贴 API Key">' +
+    '<button class="mini" data-act="add-save">保存</button>' +
+    '<button class="mini" data-act="add-cancel">取消</button>' +
+    '<div class="err"></div></div></td></tr>'
+  );
+  const key = document.querySelector("#providers-body .addform .keyinput");
+  if (key) key.focus();
+}
+
+function cancelAddProvider() {
+  const row = document.querySelector("#providers-body .addrow");
+  if (row) row.remove();
+}
+
+async function saveAddProvider() {
+  const form = addFormOf();
+  if (!form) return;
+  const errBox = form.querySelector(".err");
+  const value = form.querySelector(".keyinput").value;
+  const preset = form.querySelector("select").value;
+  const body = { preset: preset, api_key: value };
+  if (preset === "custom") {
+    body.name = form.querySelector(".nameinput").value.trim();
+    body.base_url = form.querySelector(".baseinput").value.trim();
+    if (!body.name) { errBox.textContent = "请填写名称"; return; }
+    if (!body.base_url) { errBox.textContent = "请填写 Base URL"; return; }
+  }
+  if (!value.trim()) { errBox.textContent = "请输入 API Key"; return; }
+  const btn = form.querySelector('button[data-act="add-save"]');
+  btn.disabled = true;
+  btn.textContent = "保存中…";
+  let resp;
+  try {
+    resp = await fetch("/api/providers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    errBox.textContent = "网络错误：" + err.message;
+    btn.disabled = false;
+    btn.textContent = "保存";
+    return;
+  }
+  if (!resp.ok) {
+    let detail = "HTTP " + resp.status;
+    try { detail = (await resp.json()).detail || detail; } catch (e) { /* 响应非 JSON */ }
+    errBox.textContent = detail;
+    btn.disabled = false;
+    btn.textContent = "保存";
+    return;
+  }
+  loadCatalog().catch(showError);  // 表格重建后添加行随之移除
+}
+
+document.getElementById("add-provider").addEventListener("click", startAddProvider);
+
+document.getElementById("providers-body").addEventListener("change", (event) => {
+  const sel = event.target.closest('select[data-act="add-preset"]');
+  if (!sel) return;
+  const custom = sel.value === "custom";
+  const form = sel.closest(".addform");
+  form.querySelector(".nameinput").style.display = custom ? "" : "none";
+  form.querySelector(".baseinput").style.display = custom ? "" : "none";
+});
+
+document.getElementById("providers-body").addEventListener("click", (event) => {
+  const btn = event.target.closest("button[data-act]");
+  if (!btn) return;
+  const name = btn.dataset.name;
+  if (btn.dataset.act === "edit") startKeyEdit(name);
+  else if (btn.dataset.act === "save") saveProviderKey(name);
+  else if (btn.dataset.act === "cancel") cancelKeyEdit(name);
+  else if (btn.dataset.act === "add-save") saveAddProvider();
+  else if (btn.dataset.act === "add-cancel") cancelAddProvider();
+});
+
 // 支持 ?days=N&tag=xx 初始化（便于书签/分享/自动化截图）
 const urlParams = new URLSearchParams(location.search);
 if (urlParams.get("days")) {
@@ -276,8 +631,10 @@ document.getElementById("tag").addEventListener("change", (event) => {
 document.getElementById("refresh").addEventListener("click", () => {
   load().catch(showError);
   loadCatalog().catch(showError);
+  loadLocalService();
 });
 
+pollLocalService();
 load().catch(showError);
 // 目录含 provider 连通性探测：仅页面加载/手动刷新时拉取，不随 30s 轮询
 loadCatalog().catch(showError);

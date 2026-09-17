@@ -5,6 +5,12 @@ from __future__ import annotations
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def isolate_dotenv(monkeypatch):
+    """所有单测使用显式环境或 mock，避免首次导入应用加载本机真实密钥。"""
+    monkeypatch.setattr("app.config.load_dotenv", lambda *args, **kwargs: None)
+
+
 @pytest.fixture()
 def config_dict() -> dict:
     """最小可用的网关配置（供 parse_config / Registry 测试直接使用）。"""

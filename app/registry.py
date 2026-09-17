@@ -1,4 +1,4 @@
-"""模型名解析：别名 -> 模型 -> (provider, 上游名)；回退候选链。"""
+"""模型名解析：别名 -> 模型映射 -> provider/模型名前缀直通；回退候选链。"""
 
 from __future__ import annotations
 
@@ -27,11 +27,15 @@ class Registry:
     def resolve(self, requested: str) -> ResolvedModel:
         name = self._config.aliases.get(requested, requested)
         ref = self._config.models.get(name)
-        if ref is None:
-            raise UnknownModelError(
-                f"未知模型 '{requested}'（可用: {self._available_names()}）"
-            )
-        return ResolvedModel(name=name, provider=ref.provider, upstream=ref.upstream)
+        if ref is not None:
+            return ResolvedModel(name=name, provider=ref.provider, upstream=ref.upstream)
+        # 前缀直通："provider/上游模型名"（如 moonshot/kimi-k2、siliconflow/Qwen/Qwen3-8B）
+        provider_name, sep, upstream = name.partition("/")
+        if sep and upstream and provider_name in self._config.providers:
+            return ResolvedModel(name=name, provider=provider_name, upstream=upstream)
+        raise UnknownModelError(
+            f"未知模型 '{requested}'（可用: {self._available_names()}）"
+        )
 
     def _available_names(self) -> str:
         names = sorted(self._config.models) + sorted(self._config.aliases)

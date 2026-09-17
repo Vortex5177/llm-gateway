@@ -79,7 +79,8 @@ async def collect_stats(
                                COALESCE(SUM(total_tokens), 0) AS tokens,
                                COALESCE({_ERRORS_EXPR}, 0) AS errors,
                                AVG(latency_ms) AS avg_latency_ms,
-                               AVG(ttft_ms) AS avg_ttft_ms
+                               AVG(ttft_ms) AS avg_ttft_ms,
+                               AVG(output_tps) AS avg_output_tps
                         FROM request_logs WHERE created_at >= :since{filter_sql}"""
                     ),
                     params,
@@ -139,7 +140,8 @@ async def collect_stats(
                                COALESCE(SUM(total_tokens), 0) AS tokens,
                                COALESCE({_ERRORS_EXPR}, 0) AS errors,
                                AVG(latency_ms) AS avg_latency_ms,
-                               AVG(ttft_ms) AS avg_ttft_ms
+                               AVG(ttft_ms) AS avg_ttft_ms,
+                               AVG(output_tps) AS avg_tps
                         FROM request_logs WHERE created_at >= :since{filter_sql}
                         GROUP BY bucket_epoch ORDER BY bucket_epoch"""
                     ),
@@ -216,6 +218,7 @@ async def collect_stats(
             "errors": int(r["errors"]),
             "avg_latency_ms": _round(r["avg_latency_ms"]),
             "avg_ttft_ms": _round(r["avg_ttft_ms"]),
+            "avg_tps": _round(r["avg_tps"], 2),
         }
         for r in timeseries_rows
     ]
@@ -289,6 +292,7 @@ async def collect_stats(
             "avg_latency_ms": _round(totals["avg_latency_ms"]),
             "p95_latency_ms": _round(p95),
             "avg_ttft_ms": _round(totals["avg_ttft_ms"]),
+            "avg_output_tps": _round(totals["avg_output_tps"], 2),
         },
         "by_tag": [
             {

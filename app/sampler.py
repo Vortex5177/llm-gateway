@@ -180,6 +180,11 @@ class Sampler:
         self._task: asyncio.Task[None] | None = None
         self._stop = asyncio.Event()
 
+    # ---- 热重载 ---------------------------------------------------------
+    def update_config(self, config: GatewayConfig) -> None:
+        """替换配置引用（看板新增 provider 后热生效）。"""
+        self._config = config
+
     # ---- 生命周期 -------------------------------------------------------
     def start(self) -> None:
         if self._task is None or self._task.done():

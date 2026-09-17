@@ -38,6 +38,7 @@ def log_row(
     status: str = "ok",
     latency_ms: float | None = 100.0,
     ttft_ms: float | None = None,
+    output_tps: float | None = None,
     total_tokens: int = 10,
     minutes_ago: float = 0.1,
     model: str = "qwen3-1.7b",
@@ -55,6 +56,7 @@ def log_row(
         total_tokens=total_tokens,
         latency_ms=latency_ms,
         ttft_ms=ttft_ms,
+        output_tps=output_tps,
         status=status,
         http_status=200 if status == "ok" else 502,
         attempts=1,
@@ -103,6 +105,17 @@ async def test_totals_match_manual_sql(session_factory):
     assert totals["avg_latency_ms"] == round(float(row["a"]), 1)
 
 
+async def test_totals_avg_output_tps_ignores_null(session_factory):
+    await add(
+        session_factory,
+        log_row(output_tps=10.0),
+        log_row(output_tps=30.0),
+        log_row(output_tps=None, status="timeout", latency_ms=None),
+    )
+    stats = await collect_stats(session_factory, days=7)
+    assert stats["totals"]["avg_output_tps"] == 20.0
+
+
 async def test_p95_latency_percentile(session_factory):
     await add(session_factory, *[log_row(latency_ms=float(i)) for i in range(1, 101)])
     stats = await collect_stats(session_factory, days=7)
@@ -124,6 +137,7 @@ async def test_empty_db_returns_zeroed_totals(session_factory):
         "avg_latency_ms": None,
         "p95_latency_ms": None,
         "avg_ttft_ms": None,
+        "avg_output_tps": None,
     }
     assert stats["by_tag"] == []
     assert stats["timeseries"] == []
@@ -217,6 +231,18 @@ async def test_timeseries_hour_buckets(session_factory):
     assert points[1]["requests"] == 2
     assert points[1]["avg_latency_ms"] == 10.0
     assert points[1]["tokens"] == 10
+
+
+async def test_timeseries_avg_tps_per_bucket(session_factory):
+    await add(
+        session_factory,
+        log_row(output_tps=10.0),
+        log_row(output_tps=30.0),
+    )
+    stats = await collect_stats(session_factory, days=7)
+    points = stats["timeseries"]
+    assert len(points) == 1
+    assert points[0]["avg_tps"] == 20.0
 
 
 async def test_timeseries_five_minute_buckets_for_one_day(session_factory):
