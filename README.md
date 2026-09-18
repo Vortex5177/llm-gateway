@@ -4,6 +4,10 @@
 
 自托管、OpenAI 协议兼容的薄网关：把本地 vLLM（WSL2）与云端 API（DeepSeek / DashScope）统一到一个入口，提供模型别名解析、服务端回退链、硬顶参数注入、本地模型启停管理与全链路可观测性。
 
+## ![](C:\Users\29461\AppData\Roaming\marktext\images\2026-09-18-16-20-01-image.png)
+
+
+
 ## 架构
 
 ```
@@ -59,33 +63,33 @@ wsl -d Ubuntu-24.04 -- /opt/scripts/start-vllm.sh
 
 ## 端点
 
-| 端点 | 说明 |
-|---|---|
-| `POST /v1/chat/completions` | 聊天补全（流式/非流式），OpenAI 兼容 |
-| `GET /v1/models` | 模型与别名清单 |
-| `GET /health` | 存活 + 各 provider 可达性 |
-| `GET /api/stats?days=N&tag=X` | 聚合统计（总量 / tag 分组 / 时间序列 / GPU / 引擎 / 最近请求） |
-| `GET /api/models` | 模型目录（名称 / 本地或云 / 别名 / 回退链）+ provider 接入状态（密钥来源 / 连通性） |
-| `GET /api/local-vllm` | 本地 vLLM 状态（运行态 / 当前模型 / 候选清单；仅限本机） |
-| `POST /api/local-vllm/start` | 启动本地 vLLM（body 可选 `{"model": "候选名"}`；仅限本机看板） |
-| `POST /api/local-vllm/switch` | 切换本地 vLLM 候选模型（仅限本机看板） |
-| `POST /api/local-vllm/stop` | 停止本地 vLLM（仅限本机看板） |
-| `POST /api/providers` | 添加 Provider（预设或自定义 base_url）：写用户 overlay + `.env` 并热生效（仅限本机调用） |
-| `POST /api/providers/{name}/key` | 保存 provider 密钥：写 `.env` 并即时生效（仅限本机调用；保存后立即复探测并返回连通性） |
-| `GET /` | 静态监控看板 |
+| 端点                               | 说明                                                             |
+| -------------------------------- | -------------------------------------------------------------- |
+| `POST /v1/chat/completions`      | 聊天补全（流式/非流式），OpenAI 兼容                                         |
+| `GET /v1/models`                 | 模型与别名清单                                                        |
+| `GET /health`                    | 存活 + 各 provider 可达性                                            |
+| `GET /api/stats?days=N&tag=X`    | 聚合统计（总量 / tag 分组 / 时间序列 / GPU / 引擎 / 最近请求）                     |
+| `GET /api/models`                | 模型目录（名称 / 本地或云 / 别名 / 回退链）+ provider 接入状态（密钥来源 / 连通性）          |
+| `GET /api/local-vllm`            | 本地 vLLM 状态（运行态 / 当前模型 / 候选清单；仅限本机）                             |
+| `POST /api/local-vllm/start`     | 启动本地 vLLM（body 可选 `{"model": "候选名"}`；仅限本机看板）                   |
+| `POST /api/local-vllm/switch`    | 切换本地 vLLM 候选模型（仅限本机看板）                                         |
+| `POST /api/local-vllm/stop`      | 停止本地 vLLM（仅限本机看板）                                              |
+| `POST /api/providers`            | 添加 Provider（预设或自定义 base_url）：写用户 overlay + `.env` 并热生效（仅限本机调用） |
+| `POST /api/providers/{name}/key` | 保存 provider 密钥：写 `.env` 并即时生效（仅限本机调用；保存后立即复探测并返回连通性）           |
+| `GET /`                          | 静态监控看板                                                         |
 
 ## 配置说明（gateway.yaml）
 
-| 段 | 作用 |
-|---|---|
-| `server` | 监听地址、上游超时、鉴权开关（默认关闭，仅监听 127.0.0.1） |
-| `providers` | 上游服务：base_url + 密钥（明文或 `*_env` 环境变量引用）+ metrics_url + 可选 `type`（local/cloud，缺省按 base_url 推断） |
-| `models` | 客户端可见名 → provider + 上游真实名 |
-| `aliases` | 逻辑别名（如 `default`），切换本地/云只改这一行 |
-| `fallbacks` | 服务端回退链；键支持 `模型@tag` 精确覆盖 |
-| `injection` | 硬顶注入表：tag 精确匹配 + `default` 兜底；`extra` 展开到请求体顶级 |
-| `local_vllm` | 本地 vLLM 管理：启用开关、WSL 发行版、启动脚本、候选模型路径（候选名 = 目录名小写，需有对应 models 映射） |
-| `sampling` | 指标采样间隔与 GPU 来源（auto / nvml / wsl） |
+| 段            | 作用                                                                                           |
+| ------------ | -------------------------------------------------------------------------------------------- |
+| `server`     | 监听地址、上游超时、鉴权开关（默认关闭，仅监听 127.0.0.1）                                                           |
+| `providers`  | 上游服务：base_url + 密钥（明文或 `*_env` 环境变量引用）+ metrics_url + 可选 `type`（local/cloud，缺省按 base_url 推断） |
+| `models`     | 客户端可见名 → provider + 上游真实名                                                                    |
+| `aliases`    | 逻辑别名（如 `default`），切换本地/云只改这一行                                                                |
+| `fallbacks`  | 服务端回退链；键支持 `模型@tag` 精确覆盖                                                                     |
+| `injection`  | 硬顶注入表：tag 精确匹配 + `default` 兜底；`extra` 展开到请求体顶级                                               |
+| `local_vllm` | 本地 vLLM 管理：启用开关、WSL 发行版、启动脚本、候选模型路径（候选名 = 目录名小写，需有对应 models 映射）                              |
+| `sampling`   | 指标采样间隔与 GPU 来源（auto / nvml / wsl）                                                            |
 
 看板添加的 Provider 写入 `data/gateway.user.yaml`（overlay，与 gateway.yaml 合并加载；同名以 gateway.yaml 为准），密钥写入 `.env`。
 

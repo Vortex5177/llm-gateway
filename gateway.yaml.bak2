@@ -35,7 +35,7 @@ fallbacks:                         # 仅服务端；键也支持 "模型@精确t
 
 injection:                         # 固定硬顶（override），tag 精确匹配 + default 兜底
   default:       { max_tokens: 2048, extra: { chat_template_kwargs: { enable_thinking: false } } }
-  speclens/scan: { max_tokens: 32768, repetition_penalty: 1.05 }
+  speclens/scan: { max_tokens: 4096, repetition_penalty: 1.05 }
 
 local_vllm:
   enabled: true
