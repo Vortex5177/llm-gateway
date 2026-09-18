@@ -4,9 +4,7 @@
 
 自托管、OpenAI 协议兼容的薄网关：把本地 vLLM（WSL2）与云端 API（DeepSeek / DashScope）统一到一个入口，提供模型别名解析、服务端回退链、硬顶参数注入、本地模型启停管理与全链路可观测性。
 
-## ![](C:\Users\29461\AppData\Roaming\marktext\images\2026-09-18-16-20-01-image.png)
-
-
+## ![](C:\Users\29461\Documents\Qoder\2026-09-16\chat-1\屏幕截图%202026-09-18%20161954.png)
 
 ## 架构
 
